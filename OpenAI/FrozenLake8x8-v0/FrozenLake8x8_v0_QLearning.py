@@ -4,7 +4,7 @@ import gym
 
 def uploadSimulation():
     API_KEY = open('/home/dollarakshay/Documents/API Keys/Open AI Key.txt', 'r').read().rstrip()
-    gym.upload('Artificial Intelligence/'+GAME, api_key=API_KEY)
+    gym.upload('OpenAI/'+GAME+"/Data", api_key=API_KEY)
 
 
 def updateQTable(prevState, prevAction, reward, curState):
@@ -18,15 +18,16 @@ def getAction(curState):
         return np.argmax(q_table[curState])
 
 
-GAME = 'FrozenLake-v0'
+GAME = 'FrozenLake8x8-v0'
 env = gym.make(GAME)
+env.seed(1995)
 
 RECORD = None
-MAX_EPISODES = 100001
-MAX_STEPS = env.spec.timestep_limit     # 100 for FrozenLake v0
+MAX_EPISODES = 500001
+MAX_STEPS = env.spec.timestep_limit
 EPSILON = 0
-DISCOUNT = 0.9
-LEARNING_RATE = 0.001
+DISCOUNT = 1
+LEARNING_RATE = 0.0001
 
 in_dimen = env.observation_space.n
 out_dimen = env.action_space.n
@@ -36,7 +37,7 @@ actionMin = 0
 actionMax = env.action_space.n
 q_table = np.zeros((in_dimen, out_dimen))
 
-env.monitor.start('Artificial Intelligence/'+GAME, force=True, video_callable=RECORD)
+env.monitor.start('OpenAI/'+GAME+"/Data", force=True , video_callable=RECORD)
 
 print("\nObservation\n--------------------------------")
 print("Shape :", in_dimen, " | High :", obsMax, " | Low :", obsMin)
@@ -47,10 +48,9 @@ totalreward = 0
 
 for episode in range(MAX_EPISODES):
     
-    if episode%10000 == 0 :
-        print("Avg Reward =", totalreward/1000)
+    if episode%1000 == 0 :
+        print("Episode =", episode, "  |  Avg Reward =", totalreward/1000)
         totalreward = 0
-        print("Episode =", episode)
 
     EPSILON -= 0.001
     curState = env.reset()

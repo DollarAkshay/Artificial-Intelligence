@@ -1,14 +1,12 @@
-import time, math, random, bisect
+import time, math, random, bisect, copy
 import gym
 import numpy as np
 
-def sigmoid(x):
-    return 1.0/(1.0 + np.exp(-x))
 
-class NeuralNet :
-    
+
+class NeuralNet : 
     def __init__(self, nodeCount):     
-        self.fitness = 0
+        self.fitness = 0.0
         self.nodeCount = nodeCount
         self.weights = []
         self.biases = []
@@ -40,14 +38,12 @@ class NeuralNet :
                     print(" %5.2f," % (self.biases[i][j]), end="")
             print("\b],", end="")
         print("\b \n]\n--------------------------------\n")
-
-
   
     def getOutput(self, input):
         output = input
         for i in range(len(self.nodeCount)-1):
             output = np.reshape( np.matmul(output, self.weights[i]) + self.biases[i], (self.nodeCount[i+1]))
-        return np.argmax(sigmoid(output))
+        return np.argmax(output)
 
 
 class Population :
@@ -57,7 +53,9 @@ class Population :
         self.m_rate = mutationRate
         self.population = [ NeuralNet(nodeCount) for i in range(populationCount)]
 
-    def createChild(self, nn1, nn2):   
+
+    def createChild(self, nn1, nn2):
+        
         child = NeuralNet(self.nodeCount)
         for i in range(len(child.weights)):
             for j in range(len(child.weights[i])):
@@ -81,6 +79,7 @@ class Population :
 
 
     def createNewGeneration(self, bestNN):    
+
         nextGen = []
         self.population.sort(key=lambda x: x.fitness, reverse=True)
         for i in range(self.popCount):
@@ -109,8 +108,12 @@ class Population :
         self.population = nextGen
 
 
+def sigmoid(x):
+    return 1.0/(1.0 + np.exp(-x))
+
+
 def replayBestBots(bestNeuralNets, steps, sleep):  
-    choice = input("\nDo you want to watch the replay ?[Y/N] : ")
+    choice = input("Do you want to watch the replay ?[Y/N] : ")
     if choice=='Y' or choice=='y':
         for i in range(1, len(bestNeuralNets)):
             if i%steps == 0 :
@@ -121,7 +124,7 @@ def replayBestBots(bestNeuralNets, steps, sleep):
                     time.sleep(sleep)
                     action = bestNeuralNets[i].getOutput(observation)
                     observation, reward, done, info = env.step(action)
-                    totalReward+=reward
+                    totalReward += reward
                     if done:
                         observation = env.reset()
                         break
@@ -131,51 +134,79 @@ def replayBestBots(bestNeuralNets, steps, sleep):
 def recordBestBots(bestNeuralNets):  
     print("\n Recording Best Bots ")
     print("---------------------")
-    env.monitor.start('Artificial Intelligence/'+GAME, force=True)
+    env.monitor.start('OpenAI/'+GAME+"/Data", force=True )
     observation = env.reset()
     for i in range(1, len(bestNeuralNets)):
-        totalReward = 0
         for step in range(MAX_STEPS):
             env.render()
             action = bestNeuralNets[i].getOutput(observation)
             observation, reward, done, info = env.step(action)
-            totalReward+=reward
             if done:
                 observation = env.reset()
                 break
         print("Generation %3d | Expected Fitness of %4d | Actual Fitness = %4d" % (i, bestNeuralNets[i].fitness, totalReward))
     env.monitor.close()
-            
 
 def uploadSimulation():
     API_KEY = open('/home/dollarakshay/Documents/API Keys/Open AI Key.txt', 'r').read().rstrip()
-    gym.upload('Artificial Intelligence/'+GAME, api_key=API_KEY)
+    gym.upload('OpenAI/'+GAME+"/Data", api_key=API_KEY)
 
 
 
-GAME = 'CartPole-v0'
-MAX_GENERATIONS = 150
-MAX_STEPS = 200 
-POPULATION_COUNT = 50
+def mapRange(value, leftMin, leftMax, rightMin, rightMax):
+    # Figure out how 'wide' each range is
+    leftSpan = leftMax - leftMin
+    rightSpan = rightMax - rightMin
+
+    # Convert the left range into a 0-1 range (float)
+    valueScaled = float(value - leftMin) / float(leftSpan)
+
+    # Convert the 0-1 range into a value in the right range.
+
+    return rightMin + (valueScaled * rightSpan)
+
+def normalizeArray(aVal, aMin, aMax): 
+    res = []
+    for i in range(len(aVal)):
+        res.append( mapRange(aVal[i], aMin[i], aMax[i], -1, 1) )
+    return res
+
+def scaleArray(aVal, aMin, aMax):   
+    res = []
+    for i in range(len(aVal)):
+        res.append( mapRange(aVal[i], -1, 1, aMin[i], aMax[i]) )
+    return res
+
+
+GAME = 'LunarLander-v2'
+MAX_STEPS = 500
+MAX_GENERATIONS = 1000
+POPULATION_COUNT = 100
 MUTATION_RATE = 0.001
-
-
 env = gym.make(GAME)
-observation = env.reset()
 
+observation = env.reset()
 in_dimen = env.observation_space.shape[0]
 out_dimen = env.action_space.n
-pop = Population(POPULATION_COUNT, MUTATION_RATE, [in_dimen, 8, 5, out_dimen])
-
+obsMin = env.observation_space.low
+obsMax = env.observation_space.high
+actionMin = 0
+actionMax = env.action_space.n
+pop = Population(POPULATION_COUNT, MUTATION_RATE, [in_dimen, 13, 8, 13, out_dimen])
 bestNeuralNets = []
+
+print("\nObservation\n--------------------------------")
+print("Shape :", in_dimen, " | High :", obsMax, " | Low :", obsMin)
+print("\nAction\n--------------------------------")
+print("Shape :", out_dimen, " | High :", actionMax, " | Low :", actionMin,"\n")
+
 
 for gen in range(1, MAX_GENERATIONS):
     genAvgFit = 0.0
-    maxFit = 0.0
+    maxFit = -100000000
     maxNeuralNet = None
     for nn in pop.population:
         totalReward = 0
-        
         for step in range(MAX_STEPS):
             #env.render()
             action = nn.getOutput(observation)
@@ -184,30 +215,24 @@ for gen in range(1, MAX_GENERATIONS):
             if done:
                 observation = env.reset()
                 break
+
         nn.fitness = totalReward
         genAvgFit += nn.fitness
         if nn.fitness > maxFit :
             maxFit = nn.fitness
-            maxNeuralNet = nn
+            maxNeuralNet = copy.deepcopy(nn);
 
     bestNeuralNets.append(maxNeuralNet)
     genAvgFit/=pop.popCount
-    print("Generation : %3d |  Avg Fitness : %4.0f  |  Max Fitness : %4.0f  " % (gen, genAvgFit, maxFit) )
-    pop.createNewGeneration()
-
+    print("Generation : %3d |  Avg Fitness : %5.0f  |  Max Fitness : %5.0f  " % (gen, genAvgFit, maxFit) )
+    pop.createNewGeneration(maxNeuralNet)
 
 
 recordBestBots(bestNeuralNets)
 
 uploadSimulation()
 
-replayBestBots(bestNeuralNets, 1, 0.0625)
-
-
-
-
-
-
+replayBestBots(bestNeuralNets, max(1, int(math.ceil(MAX_GENERATIONS/10.0))), 0.0625)
 
 
 

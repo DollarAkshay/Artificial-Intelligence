@@ -110,7 +110,7 @@ def replayBestBots(bestNeuralNets, steps, sleep):
             
 def uploadSimulation():
     API_KEY = open('/home/dollarakshay/Documents/API Keys/Open AI Key.txt', 'r').read().rstrip()
-    gym.upload('Artificial Intelligence/'+GAME, api_key=API_KEY)
+    gym.upload('OpenAI/'+GAME+"/Data", api_key=API_KEY)
 
 
 
@@ -149,7 +149,7 @@ POPULATION_COUNT = 100
 MUTATION_RATE = 0.5
 
 env = gym.make('Pendulum-v0')
-env.monitor.start('Artificial Intelligence/Pendulum v1', force=True, video_callable=RECORD )
+env.monitor.start('OpenAI/'+GAME+"/Data", force=True , video_callable=RECORD )
 
 observation = env.reset()
 prevObservation = observation

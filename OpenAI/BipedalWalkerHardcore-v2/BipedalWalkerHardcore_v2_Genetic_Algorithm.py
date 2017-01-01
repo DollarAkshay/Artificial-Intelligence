@@ -3,6 +3,7 @@ import gym
 import numpy as np
 
 
+
 class NeuralNet : 
     def __init__(self, nodeCount, loadFile):     
         self.fitness = 0.0
@@ -47,20 +48,19 @@ class NeuralNet :
         for i in range(len(self.nodeCount)-1):
             output = np.reshape( np.matmul(output, self.weights[i]) + self.biases[i], (self.nodeCount[i+1]))
             output = np.maximum(output, 0)
-        return np.subtract(np.multiply(sigmoid(output), 2), 1)
-#
-#
+        return output
+
+
 class Population :
     def __init__(self, populationCount, mutationRate, nodeCount, loadFile=False):
         self.nodeCount = nodeCount
         self.popCount = populationCount
         self.m_rate = mutationRate
-        if loadFile:
-            print("Loading Values from File\n")
         self.population = [ NeuralNet(nodeCount, loadFile) for i in range(populationCount)]
 
 
-    def createChild(self, nn1, nn2):  
+    def createChild(self, nn1, nn2):
+        
         child = NeuralNet(self.nodeCount, False)
         for i in range(len(child.weights)):
             for j in range(len(child.weights[i])):
@@ -110,29 +110,35 @@ class Population :
                 print("Indices = ", i1, i2)
         self.population.clear()
         self.population = nextGen
-#
-#
+
+
 def sigmoid(x):
     return 1.0/(1.0 + np.exp(-x))
-#
+
 def mapRange(value, leftMin, leftMax, rightMin, rightMax):
+    # Figure out how 'wide' each range is
     leftSpan = leftMax - leftMin
     rightSpan = rightMax - rightMin
+
+    # Convert the left range into a 0-1 range (float)
     valueScaled = float(value - leftMin) / float(leftSpan)
+
+    # Convert the 0-1 range into a value in the right range.
+
     return rightMin + (valueScaled * rightSpan)
-#
+
 def normalizeArray(aVal, aMin, aMax): 
     res = []
     for i in range(len(aVal)):
         res.append( mapRange(aVal[i], aMin[i], aMax[i], -1, 1) )
     return res
-#
+
 def scaleArray(aVal, aMin, aMax):   
     res = []
     for i in range(len(aVal)):
         res.append( mapRange(aVal[i], -1, 1, aMin[i], aMax[i]) )
     return res    
-#
+
 def replayBestBots(bestNeuralNets, steps, sleep):  
     choice = input("Do you want to watch the replay ?[Y/N] : ")
     if choice=='Y' or choice=='y':
@@ -149,31 +155,36 @@ def replayBestBots(bestNeuralNets, steps, sleep):
                     if done:
                         break
                 print("Generation %3d | Expected Fitness of %4d | Actual Fitness = %4d" % (i+1, bestNeuralNets[i].fitness, totalReward))
-#
+
+
 def recordBestBots(bestNeuralNets):  
     print("\n Recording Best Bots ")
     print("---------------------")
-    env.monitor.start('Artificial Intelligence/'+GAME, force=True)
+    env.monitor.start('OpenAI/'+GAME+"/Data", force=True )
+    observation = env.reset()
     for i in range(len(bestNeuralNets)):
         totalReward = 0
-        observation = env.reset()
         for step in range(MAX_STEPS):
             env.render()
             action = bestNeuralNets[i].getOutput(observation)
             observation, reward, done, info = env.step(action)
             totalReward += reward
             if done:
+                observation = env.reset()
                 break
         print("Generation %3d | Expected Fitness of %4d | Actual Fitness = %4d" % (i+1, bestNeuralNets[i].fitness, totalReward))
     env.monitor.close()
-#
+
+
+
+
 def loadWeights():
     
     nodeCount = []
     weights = []
     biases = []
     try :
-        f = open('Artificial Intelligence/'+GAME+"/"+GAME+".txt", 'r')
+        f = open('OpenAI/'+GAME+"/Data/"+GAME+"_weights.txt", 'r')
     except FileNotFoundError:
         print("File Not Found. Initializing random values")
         nodeCount = node_per_layer
@@ -181,6 +192,9 @@ def loadWeights():
             weights.append( np.random.uniform(low=-1, high=1, size=(nodeCount[i], nodeCount[i+1])).tolist() )
             biases.append( np.random.uniform(low=-1, high=1, size=(nodeCount[i+1])).tolist())
         return nodeCount, weights, biases
+
+
+    print("Type : ", type(f))
     
     f.readline()
     nodeCount = [int(i) for i in f.readline().split()]
@@ -197,40 +211,47 @@ def loadWeights():
     f.close()
 
     return nodeCount, weights, biases
-#
+
+
+
 def saveWeights(best):
     
-    f = open('Artificial Intelligence/'+GAME+"/"+GAME+".2txt", 'w')
+    f = open('OpenAI/'+GAME+"/Data/"+GAME+"_weights.txt", 'r')
+
     print("Node Count : ", file=f)
     for i in range(len(best.nodeCount)):
         print("%d " % best.nodeCount[i], file=f, end="");
     print("", file=f)
+
     print("Weights : ", file=f)
     for i in range(len(best.weights)):
             for j in range(len(best.weights[i])):
                 for k in range(len(best.weights[i][j])):
                     print("%+.2f " % best.weights[i][j][k], file=f, end="")
                 print("", file=f)
+
     print("Biases : ", file=f)
     for i in range(len(best.biases)):
             for j in range(len(best.biases[i])):
                 print("%+.2f " % best.biases[i][j], file=f, end="")
             print("", file=f)
+
     f.close()
-#
+
+
 def uploadSimulation():
     API_KEY = open('/home/dollarakshay/Documents/API Keys/Open AI Key.txt', 'r').read().rstrip()
-    gym.upload('Artificial Intelligence/'+GAME, api_key=API_KEY)    
-#
+    gym.upload('OpenAI/'+GAME+"/Data", api_key=API_KEY)
+    
 
 
-GAME = 'BipedalWalker-v2'
+GAME = 'BipedalWalkerHardcore-v2'
 env = gym.make(GAME)
 
 MAX_STEPS = env.spec.timestep_limit
-MAX_GENERATIONS = 500
-POPULATION_COUNT = 50
-MUTATION_RATE = 0.001
+MAX_GENERATIONS = 5
+POPULATION_COUNT = 10
+MUTATION_RATE = 0.01
 
 in_dimen = env.observation_space.shape[0]
 out_dimen = env.action_space.shape[0]
@@ -238,9 +259,9 @@ obsMin = env.observation_space.low
 obsMax = env.observation_space.high
 actionMin = env.action_space.low
 actionMax = env.action_space.high
-node_per_layer = [in_dimen, 21, 13, 8, out_dimen]
+node_per_layer = [in_dimen, 13, 8, 13, out_dimen]
 
-pop = Population(POPULATION_COUNT, MUTATION_RATE, node_per_layer, True)
+pop = Population(POPULATION_COUNT, MUTATION_RATE, node_per_layer, False)
 bestNeuralNets = []
 
 print("\nGENERAL\n--------------------------------")
@@ -256,11 +277,11 @@ try :
         minFit =  1000000
         maxFit = -1000000
         maxNeuralNet = None
-        for i, nn in enumerate(pop.population):
+        for cr, nn in enumerate(pop.population):
             observation = env.reset()
             totalReward = 0
             for step in range(MAX_STEPS):
-                if i==0 and gen%10==0:
+                if cr==-1:
                     env.render()
                 action = nn.getOutput(observation)
                 observation, reward, done, info = env.step(action)
@@ -280,15 +301,14 @@ try :
         print("Generation : %3d  |  Min : %5.0f  |  Avg : %5.0f  |  Max : %5.0f  " % (gen+1, minFit, genAvgFit, maxFit) )
         pop.createNewGeneration()
 
-    recordBestBots(bestNeuralNets)
-    uploadSimulation()
+    #recordBestBots(bestNeuralNets)
+    #uploadSimulation()
     #replayBestBots(bestNeuralNets, max(1, int(math.ceil(MAX_GENERATIONS/10.0))), 0)
 
 except KeyboardInterrupt:
     print("\nKeyboard Interrupt")
-except Exception as e:
+except:
     print("\nUnknown Exception")
-    print(str(e))
 finally :
     if len(bestNeuralNets) > 1:
         print("\nSaving Weights to file")
