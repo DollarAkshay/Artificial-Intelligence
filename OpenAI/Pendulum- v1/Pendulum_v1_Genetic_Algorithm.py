@@ -139,16 +139,18 @@ def scaleArray(aVal, aMin, aMax):
         res.append( mapRange(aVal[i], 0, 1, aMin[i], aMax[i]) )
     return res
 
+GAME = 'MountainCar-v0'
+env = gym.make(GAME)
 
 RECORD = False
-MAX_STEPS = 100
+MAX_STEPS = env.spec.timestep_limit
 MIN_REWARD = -16
 MAX_REWARD = 0
 MAX_GENERATIONS = 20
 POPULATION_COUNT = 100
 MUTATION_RATE = 0.5
 
-env = gym.make('Pendulum-v0')
+env = gym.make(GAME)
 env.monitor.start('OpenAI/'+GAME+"/Data", force=True , video_callable=RECORD )
 
 observation = env.reset()
