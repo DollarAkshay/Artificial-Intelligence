@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
@@ -29,3 +30,6 @@ Desktop.ini
 *.lnk
 
 
+=======
+*.csv
+>>>>>>> 6e111a9015afd7e3456a58405ea88249693433e2
