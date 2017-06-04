@@ -1,4 +1,4 @@
-import time, math, random, bisect, copy
+import time, math, random, bisect, copy, os
 import gym
 import numpy as np
 
@@ -219,9 +219,15 @@ def saveWeights(best):
     f.close()
 #
 def uploadSimulation():
-    API_KEY = open('/home/dollarakshay/Documents/API Keys/Open AI Key.txt', 'r').read().rstrip()
+    keyPath = ""
+    if os.name == "nt":
+        keyPath = "C:\\Users\\Akshay L Aradhya\\Documents\\Important Documents\\API Keys\\Open AI Key.txt.txt"
+    else :
+        keyPath = '/home/dollarakshay/Documents/API Keys/Open AI Key.txt'
+    API_KEY = open(keyPath, 'r').read().rstrip()
     gym.upload('OpenAI/'+GAME+"/Data", api_key=API_KEY)    
 #
+
 
 
 GAME = 'BipedalWalker-v2'

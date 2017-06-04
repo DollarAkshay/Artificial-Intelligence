@@ -1,4 +1,4 @@
-import time, math, random, bisect, copy
+import time, math, random, bisect, copy, os
 import gym
 import numpy as np
 
@@ -132,7 +132,7 @@ def recordBestBots(bestNeuralNets):
 
             
 def uploadSimulation():
-    API_KEY = open('/home/dollarakshay/Documents/API Keys/Open AI Key.txt', 'r').read().rstrip()
+    API_KEY = open(keyPath, 'r').read().rstrip()
     gym.upload('OpenAI/'+GAME+"/Data", api_key=API_KEY)
 
 
@@ -164,6 +164,11 @@ def scaleArray(aVal, aMin, aMax):
         res.append( mapRange(aVal[i], -1, 1, aMin[i], aMax[i]) )
     return res
 
+
+if os.name == "nt":
+    keyPath = "C:\\Users\\Akshay L Aradhya\\Documents\\Important Documents\\API Keys\\Open AI Key.txt.txt"
+else :
+    keyPath = '/home/dollarakshay/Documents/API Keys/Open AI Key.txt'
 
 GAME = 'Acrobot-v1'
 RECORD = None
