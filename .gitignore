@@ -1,0 +1,31 @@
+# Windows image file caches
+Thumbs.db
+ehthumbs.db
+
+#Visual Studio Files
+*.sdf
+*.pyproj
+*.suo
+*.sln
+*.user
+/Debug
+/@Visual Studio Files
+
+#Visual Studio Code Folder
+/.vscode
+/Miscellaneous/Data
+
+# Folder config file
+Desktop.ini
+
+
+# Windows Installer files
+*.cab
+*.msi
+*.msm
+*.msp
+
+# Windows shortcuts
+*.lnk
+
+
