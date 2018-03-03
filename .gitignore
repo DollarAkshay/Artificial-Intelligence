@@ -28,5 +28,5 @@ Desktop.ini
 # Windows shortcuts
 *.lnk
 
-/Data
+OpenAI/*/Data
 
