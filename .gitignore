@@ -28,5 +28,9 @@ Desktop.ini
 # Windows shortcuts
 *.lnk
 
+OpenAI/*/Data
 
+<<<<<<< HEAD
 *.csv
+=======
+>>>>>>> 4f0e73005ddaee22e7113a6d3db1e299cfc28b5e
