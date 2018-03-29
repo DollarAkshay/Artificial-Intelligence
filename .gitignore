@@ -29,5 +29,7 @@ Desktop.ini
 *.lnk
 
 OpenAI/*/Data
+Machine Learning/*/Data
 
+# Ignoring general data files for extra good measure
 *.csv
