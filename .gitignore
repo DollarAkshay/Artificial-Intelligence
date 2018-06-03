@@ -1,35 +1,16 @@
-# Windows image file caches
+# Windows Files
+*.lnk
+Desktop.ini
 Thumbs.db
 ehthumbs.db
 
-#Visual Studio Files
-*.sdf
-*.pyproj
-*.suo
-*.sln
-*.user
-/Debug
-/@Visual Studio Files
-
-#Visual Studio Code Folder
-/.vscode
+# Ignoring Log Files
 /Machine Learning/HackerRank Dota 2/TensorFlow Logs/TensorBoard
 
-# Folder config file
-Desktop.ini
-
-
-# Windows Installer files
-*.cab
-*.msi
-*.msm
-*.msp
-
-# Windows shortcuts
-*.lnk
-
-OpenAI/*/Data
-Machine Learning/*/Data
-
 # Ignoring general data files for extra good measure
-*.csv
+OpenAI/*/Data
+Machine Learning/*/data
+
+
+
+
