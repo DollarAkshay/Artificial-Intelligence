@@ -9,7 +9,7 @@ ehthumbs.db
 
 # Ignoring general data files for extra good measure
 OpenAI/*/Data
-Machine Learning/*/data
+Machine Learning/*/Data
 
 
 
