@@ -15,15 +15,15 @@ class RLAgent:
 
     def __init__(self, state_size, action_size, load_weights=None):
         self.epsilon = 1.0
-        self.epsilon_decay = 0.995
+        self.epsilon_decay = 0.9995
         self.epsilon_min = 0.01
         self.gamma = 0.99
         self.learning_rate = 0.0001
         self.learning_rate_decay = 0.01
 
-        self.batch_size = 32
+        self.batch_size = 64
 
-        self.replay_buffer = collections.deque(maxlen=250000)
+        self.replay_buffer = collections.deque(maxlen=100000)
         self.state_size = state_size
         self.action_size = action_size
         if load_weights is not None:
@@ -34,8 +34,8 @@ class RLAgent:
     # Define the layers of the neural network model
     def build_model(self):
         model = keras.models.Sequential()
-        model.add(keras.layers.Dense(32, activation="relu", input_shape=self.state_size))
-        model.add(keras.layers.Dense(32, activation="relu"))
+        model.add(keras.layers.Dense(24, activation="relu", input_shape=self.state_size))
+        model.add(keras.layers.Dense(36, activation="relu"))
         model.add(keras.layers.Dense(action_size))
         model.compile(
             optimizer=keras.optimizers.Adam(lr=self.learning_rate),
@@ -79,6 +79,9 @@ class RLAgent:
 
     # Train the model parameters
     def trainModel(self):
+        if len(agent.replay_buffer) < agent.batch_size:
+            return
+
         minibatch = random.sample(self.replay_buffer, min(self.batch_size, len(self.replay_buffer)))
         batch_train_x = []
         batch_train_y = []
@@ -117,6 +120,8 @@ def plotMetrics(episode, total_reward, train_loss, max_frame, epsilon):
 
 
 # ~~~ Main Code ~~~
+
+# Global Variables and Constants
 GAME = 'LunarLander-v2'
 MAX_EPISODES = 10000
 MAX_FRAMES = 1000
@@ -125,7 +130,7 @@ PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 summary_writer = tf.summary.FileWriter(os.path.join(PARENT_DIR, 'data', 'TensorBoard', RUN_ID))
 env = gym.make(GAME)
-# env = gym.wrappers.Monitor(env, os.path.join(PARENT_DIR, 'data/recordings/', RUN_ID), force=True)
+env = gym.wrappers.Monitor(env, os.path.join(PARENT_DIR, 'data/recordings/', RUN_ID), force=True)
 state_size = env.observation_space.shape
 action_size = env.action_space.n
 agent = RLAgent(state_size, action_size)
@@ -134,35 +139,26 @@ print("\n\nINFO\n--------------")
 print("State Size  : {}".format(state_size))
 print("Action Size : {:2d}".format(action_size))
 
-episode_history = []
-reward_history = []
-loss_history = []
-
+# Start the Simulation
 try:
-    print("Starting : ")
     for episode in range(MAX_EPISODES):
-
         total_reward = 0
         train_loss = 0
         max_frame = 0
         state = env.reset()
-
         for frame in range(MAX_FRAMES):
             action = agent.getAction(state)
             next_state, reward, done, info = env.step(action)
-
-            total_reward += reward
             agent.saveExperience(state, action, reward, next_state)
             state = next_state
+            total_reward += reward
 
-            if done or total_reward <= -150:
+            if done:
                 max_frame = frame
                 print("Episode: {:4d} | Frames : {:3d} | Total Reward: {:+9.3f} | Epsilon: {:5.3f}".format(episode, frame, total_reward, agent.epsilon))
                 break
 
-        if len(agent.replay_buffer) >= agent.batch_size:
-            train_loss = agent.trainModel()
-
+        train_loss = agent.trainModel()
         plotMetrics(episode, total_reward, train_loss, max_frame, agent.epsilon)
 
 except Exception as e:
@@ -171,3 +167,5 @@ finally:
     print("Done")
     agent.saveModel()
     env.close()
+
+# Unable to solve even after 10k Episodes
