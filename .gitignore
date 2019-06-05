@@ -8,8 +8,7 @@ ehthumbs.db
 /Machine Learning/HackerRank Dota 2/TensorFlow Logs/TensorBoard
 
 # Ignoring general data files for extra good measure
-OpenAI/*/data
-Machine Learning/*/data
+data/
 
 
 
