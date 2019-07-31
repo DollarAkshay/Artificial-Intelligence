@@ -17,8 +17,12 @@ class RLAgent:
     def __init__(self, env, load_weights=None):
         global PARENT_DIR, RUN_ID
 
+        self.epsilon = 0.0
+        self.epsilon_decay = 0.9995
+        self.epsilon_min = 0.01
+
         self.batch_size = 32
-        self.learning_rate = 0.001
+        self.learning_rate = 0.00001
 
         self.state_size = env.observation_space.shape[0]
         self.action_size = env.action_space.n
@@ -44,8 +48,8 @@ class RLAgent:
     def build_model(self):
         self.input_ph = tf.compat.v1.placeholder(tf.float32, (None, self.state_size), name="Input")
         with tf.name_scope("Layer_1"):
-            weights = tf.compat.v1.Variable(tf.random.normal([self.state_size, 48]))
-            biases = tf.compat.v1.Variable(tf.zeros([48]))
+            weights = tf.compat.v1.Variable(tf.random.normal([self.state_size, 100]))
+            biases = tf.compat.v1.Variable(tf.zeros([100]))
 
             tf.compat.v1.summary.histogram("weights", weights)
             tf.compat.v1.summary.histogram("biases", biases)
@@ -54,8 +58,8 @@ class RLAgent:
             layer1_out = tf.nn.relu(layer1_out)
 
         with tf.name_scope("Layer_2"):
-            weights = tf.compat.v1.Variable(tf.random.normal([48, 20]))
-            biases = tf.compat.v1.Variable(tf.zeros([20]))
+            weights = tf.compat.v1.Variable(tf.random.normal([100, 24]))
+            biases = tf.compat.v1.Variable(tf.zeros([24]))
 
             tf.compat.v1.summary.histogram("weights", weights)
             tf.compat.v1.summary.histogram("biases", biases)
@@ -63,7 +67,7 @@ class RLAgent:
             layer2_out = tf.add(tf.matmul(layer1_out, weights), biases)
             layer2_out = tf.nn.relu(layer2_out)
         with tf.name_scope("Output"):
-            weights = tf.compat.v1.Variable(tf.random.normal([20, self.action_size]))
+            weights = tf.compat.v1.Variable(tf.random.normal([24, self.action_size]))
             biases = tf.compat.v1.Variable(tf.zeros([self.action_size]))
 
             tf.compat.v1.summary.histogram("weights", weights)
@@ -108,18 +112,32 @@ class RLAgent:
 
     # Get best action from policy
     def getAction(self, state):
-        state = np.reshape(state, (1, self.state_size))
-        action = self.sess.run(self.actions, {self.input_ph: state})
-        return action[0]
+        if np.random.rand() <= self.epsilon:
+            # Exploration
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+            return np.random.randint(self.action_size)
+        else:
+            # Exploitation
+            state = np.reshape(state, (1, self.state_size))
+            action = self.sess.run(self.actions, {self.input_ph: state})
+            return action[0]
+
+    # Calculate the reverse cumulative rewards a.k.a. reward to go
+    def getWeightsFromRewards(self, rewards):
+        n = len(rewards)
+        weights = np.zeros(n)
+        for i in range(n - 1, -1, -1):
+            weights[i] = rewards[i] + (0 if i == n - 1 else weights[i + 1])
+        return weights
 
     # Train the model parameters
-    def trainModel(self, episode, states, actions, rewards):
+    def trainModel(self, episode, states, actions, rewards, average_reward_100):
 
         total_loss = 0
         episode_steps = len(states)
         total_reward = sum(rewards)
-        weights = [total_reward] * episode_steps
 
+        weights = self.getWeightsFromRewards(rewards)
         for i in range(0, episode_steps, self.batch_size):
             batch_states = np.array(states[i:i + self.batch_size])
             batch_actions = np.array(actions[i:i + self.batch_size])
@@ -133,13 +151,15 @@ class RLAgent:
                 }
             )
             total_loss += batch_loss
+        self.plotMetrics(episode, total_loss, total_reward, episode_steps, average_reward_100)
+        return total_loss
 
-        self.plotMetrics(episode, total_loss, total_reward, episode_steps)
-
-    def plotMetrics(self, episode, total_loss, total_reward, episode_steps):
+    def plotMetrics(self, episode, total_loss, total_reward, episode_steps, average_reward_100):
         summary = tf.compat.v1.Summary()
+        summary.value.add(tag='Epsilon', simple_value=self.epsilon)
         summary.value.add(tag='Loss', simple_value=total_loss)
         summary.value.add(tag='Reward', simple_value=total_reward)
+        summary.value.add(tag='Reward Average (100)', simple_value=np.mean(average_reward_100))
         summary.value.add(tag='Frames', simple_value=episode_steps)
         self.summary_writer.add_summary(summary, episode)
 
@@ -185,14 +205,14 @@ def init(PARENT_DIR, GAME):
 
 # Global Variables and Constants
 GAME = 'Acrobot-v1'
-MAX_EPISODES = 1000
+MAX_EPISODES = 500
 MAX_FRAMES = 10000
 RUN_ID = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 env, agent = init(PARENT_DIR, GAME)
 try:
-
+    average_reward_100 = collections.deque(maxlen=100)
     for episode in range(MAX_EPISODES):
         # make some empty lists for logging.
         episode_states = []
@@ -209,10 +229,12 @@ try:
             state = next_state
 
             if done:
-                print("Episode: {:4d} | Total Reward: {:+9.3f} | Frames : {:3d}".format(episode, sum(episode_rewards), frame))
+                total_reward = sum(episode_rewards)
+                average_reward_100.append(total_reward)
+                print("Episode: {:4d} | Total Reward: {:+9.3f} | Frames : {:3d} | Epsilon: {:5.3f}" .format(episode, sum(episode_rewards), frame, agent.epsilon))
                 break
 
-        agent.trainModel(episode, episode_states, episode_actions, episode_rewards)
+        agent.trainModel(episode, episode_states, episode_actions, episode_rewards, average_reward_100)
 
 
 except Exception as e:
