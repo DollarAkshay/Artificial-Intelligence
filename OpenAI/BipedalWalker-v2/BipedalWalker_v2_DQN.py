@@ -16,34 +16,43 @@ from tensorflow import keras
 class RLAgent:
 
     def __init__(self, env, load_weights=None):
-        self.epsilon = 1.0
-        self.epsilon_decay = 0.9995
+        self.epsilon = 1.5
+        self.epsilon_decay = 0.99997
         self.epsilon_min = 0.01
-        self.gamma = 0.95
-        self.learning_rate = 0.001
+        self.gamma = 0.99
+        self.learning_rate = 0.0001
         self.learning_rate_decay = 0.01
+        self.max_tau = 10000
+        self.tau = 0
 
-        self.batch_size = 1024
+        self.batch_size = 32
 
-        self.replay_buffer = collections.deque(maxlen=100000)
+        self.replay_buffer = collections.deque(maxlen=1000000)
         self.state_size = env.observation_space.shape
-        self.action_size = env.action_space.n
+        self.action_size = env.action_space.shape[0]
         if load_weights is not None:
             self.model = self.loadModel(load_weights)
         else:
             self.model = self.build_model()
-
+        self.updateTargetNetwork()
         print("\nINFO")
         print("-------------------")
         print("State Size  : {}".format(self.state_size))
         print("Action Size : {:2d}".format(self.action_size))
         print("-------------------")
 
+    # Update the target network
+    def updateTargetNetwork(self):
+        print("Updating Target Network")
+        self.target_model = keras.models.clone_model(self.model)
+        self.target_model.set_weights(self.model.get_weights())
+        self.tau = 0
+
     # Define the layers of the neural network model
     def build_model(self):
         model = keras.models.Sequential()
-        model.add(keras.layers.Dense(20, activation="relu", input_shape=self.state_size))
-        model.add(keras.layers.Dense(12, activation="relu"))
+        model.add(keras.layers.Dense(36, activation="relu", input_shape=self.state_size))
+        model.add(keras.layers.Dense(24, activation="relu"))
         model.add(keras.layers.Dense(self.action_size))
         model.compile(
             optimizer=keras.optimizers.Adam(lr=self.learning_rate),
@@ -73,11 +82,11 @@ class RLAgent:
         state = np.reshape(state, (1, self.state_size[0]))
         if np.random.rand() <= self.epsilon:
             # Exploration
-            return np.random.randint(self.action_size)
+            return env.action_space.sample()
         else:
             # Exploitation
             output = self.model.predict(state)
-            return np.argmax(output)
+            return output[0]
 
     # Save an experience for training during a later time
     def saveExperience(self, state, action, reward, next_state, done):
@@ -87,24 +96,28 @@ class RLAgent:
 
     # Train the model parameters
     def trainModel(self):
-        if len(agent.replay_buffer) < agent.batch_size:
-            return 0
 
-        minibatch = random.sample(self.replay_buffer, min(self.batch_size, len(self.replay_buffer)))
+        self.tau += 1
+        if self.tau > self.max_tau:
+            self.updateTargetNetwork()
+
+        sample_size = min(self.batch_size, len(self.replay_buffer))
+        minibatch = random.sample(self.replay_buffer, sample_size)
         batch_train_x = []
         batch_train_y = []
 
         for state, action, reward, next_state, done in minibatch:
             next_state_value = 0
             if not done:
-                next_state_value = np.max(self.model.predict(next_state))
+                next_state_value = np.max(self.target_model.predict(next_state))
 
-            action_value = reward + self.gamma * next_state_value
-            target_values = self.model.predict(state)
-            target_values[0][action] = action_value
+            target_values = [0] * self.action_size
+            for i in range(self.action_size):
+                action_value = reward + self.gamma * next_state_value
+                target_values[i] = action_value
 
             batch_train_x.append(state[0])
-            batch_train_y.append(target_values[0])
+            batch_train_y.append(target_values)
 
         history = self.model.fit(
             np.array(batch_train_x),
@@ -159,9 +172,9 @@ def plotMetrics(summary_writer, episode, total_reward, average_reward, train_los
 # ~~~ Main Code ~~~
 
 # Global Variables and Constants
-GAME = 'CartPole-v1'
+GAME = 'BipedalWalker-v2'
 MAX_EPISODES = 10000
-MAX_FRAMES = 1000
+MAX_FRAMES = 10000
 RUN_ID = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -179,13 +192,12 @@ try:
             action = agent.getAction(state)
             next_state, reward, done, info = env.step(action)
             agent.saveExperience(state, action, reward, next_state, done)
-
-            if frame % 4 == 0 and frame <= 100:
-                train_loss = agent.trainModel()
-
-            total_loss += train_loss
-            total_reward += reward
             state = next_state
+            total_reward += reward
+
+            train_loss = agent.trainModel()
+            total_loss += train_loss
+
             if done:
                 max_frame = frame
                 average_reward.append(total_reward)
@@ -201,7 +213,3 @@ finally:
     print("Done")
     agent.saveModel()
     env.close()
-
-# Average Reward @ Step Value
-# 100 @ 359
-# 200 @ 862
