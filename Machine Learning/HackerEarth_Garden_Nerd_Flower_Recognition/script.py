@@ -68,7 +68,6 @@ class DataGenerator(keras.utils.Sequence):
         return int(np.floor(len(self.filenames) / self.batch_size))
 
 
-
 # Load Data
 df = pd.read_csv("./Machine Learning/HackerEarth_Garden_Nerd_Flower_Recognition/data/train.csv")
 df['filename'] = './Machine Learning/HackerEarth_Garden_Nerd_Flower_Recognition/data/train/' + df['image_id'].astype(str) + '.jpg'
@@ -82,7 +81,7 @@ for index, row in df.iterrows():
 print("Sample filenames : ", filenames[:4])
 print("Sample labels : ", labels[:4])
 
-train_x, val_x, train_y, val_y = sklearn.model_selection.train_test_split(filenames[:], labels[:], test_size=0, random_state=64)
+train_x, val_x, train_y, val_y = sklearn.model_selection.train_test_split(filenames[:], labels[:], test_size=0.2, random_state=64)
 print("{} examples in training set".format(len(train_y)))
 print("{} examples in validation set".format(len(val_y)))
 
