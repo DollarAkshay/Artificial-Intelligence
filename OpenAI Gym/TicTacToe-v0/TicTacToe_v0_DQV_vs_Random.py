@@ -14,6 +14,9 @@ import time
 import traceback
 
 
+tf.compat.v1.disable_eager_execution()
+
+
 class RLAgent:
 
     def __init__(self, env, maximizer=True, load_weights=None):
@@ -21,12 +24,12 @@ class RLAgent:
         self.epsilon_decay = 0.9975
         self.epsilon_min = 0.001
         self.gamma = 0.99
-        self.learning_rate = 0.00005
+        self.learning_rate = 0.0001
         self.learning_rate_decay = 0.01
-        self.max_tau = 500
+        self.max_tau = 1000
         self.tau = 0
 
-        self.batch_size = 32
+        self.batch_size = 64
 
         self.replay_buffer = collections.deque(maxlen=10000)
         self.state_size = [env.observation_space.n]
@@ -53,9 +56,7 @@ class RLAgent:
     # Define the layers of the neural network model
     def build_model(self):
         model = keras.models.Sequential()
-        model.add(keras.layers.Dense(42, activation="relu", input_shape=self.state_size))
-        model.add(keras.layers.Dense(26, activation="relu"))
-        model.add(keras.layers.Dense(14, activation="relu"))
+        model.add(keras.layers.Dense(32, activation="relu", input_shape=self.state_size))
         model.add(keras.layers.Dense(self.action_size))
         model.compile(
             optimizer=keras.optimizers.Adam(lr=self.learning_rate),
@@ -154,7 +155,7 @@ def init(PARENT_DIR, GAME, SAVED_MODEL=None):
     env = gym.make(GAME)
     # env = gym.wrappers.Monitor(env, os.path.join(PARENT_DIR, 'data/recordings/', RUN_ID), force=True)
     agent = RLAgent(env, maximizer=True, load_weights=SAVED_MODEL)
-    summary_writer = tf.summary.FileWriter(os.path.join(PARENT_DIR, 'data', 'tensorboard', RUN_ID))
+    summary_writer = tf.summary.create_file_writer(os.path.join(PARENT_DIR, 'data', 'tensorboard', RUN_ID))
 
     return (env, agent, summary_writer)
 
@@ -162,18 +163,16 @@ def init(PARENT_DIR, GAME, SAVED_MODEL=None):
 # Plot the metrics to Tensorboard for easier visualization
 def plotMetrics(summary_writer, episode, epsilon, train_loss, max_step, total_reward, average_reward):
 
-    summary = tf.Summary()
-    summary.value.add(tag='Epsilon', simple_value=epsilon)
-    summary.value.add(tag='Loss', simple_value=train_loss)
-    summary.value.add(tag='Steps', simple_value=max_step)
+    with summary_writer.as_default():
+        tf.summary.scalar('Epsilon', epsilon, step=episode)
+        tf.summary.scalar('Loss', train_loss, step=episode)
+        tf.summary.scalar('Steps', max_step, step=episode)
+        tf.summary.scalar('Reward P0', total_reward[0], step=episode)
+        tf.summary.scalar('Reward P1', -total_reward[1], step=episode)
+        tf.summary.scalar('Reward Average (100) P0', np.mean(average_reward[0]), step=episode)
+        tf.summary.scalar('Reward Average (100) P1', -np.mean(average_reward[1]), step=episode)
 
-    summary.value.add(tag='Reward P0', simple_value=total_reward[0])
-    summary.value.add(tag='Reward P1', simple_value=total_reward[1])
-
-    summary.value.add(tag='Reward Average (100) P0', simple_value=np.mean(average_reward[0]))
-    summary.value.add(tag='Reward Average (100) P1', simple_value=np.mean(average_reward[1]))
-
-    summary_writer.add_summary(summary, episode)
+        summary_writer.flush()
 
 
 def randomValidAction(state):
@@ -191,17 +190,17 @@ def randomValidAction(state):
 # Global Variables and Constants
 
 GAME = 'tictactoe-v0'
-MAX_EPISODES = 10000
+MAX_EPISODES = 20
 MAX_STEPS = 100
 RENDER = False
 SAVED_MODEL = None
-# SAVED_MODEL = 'model_2020-05-14 20-17-49.h5'
+# SAVED_MODEL = 'model_2020-05-14 23-28-16.h5'
 
 RUN_ID = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 env, agent, summary_writer = init(PARENT_DIR, GAME, SAVED_MODEL)
-
+clock = time.time()
 try:
     # Start the Simulation
     average_reward = [collections.deque(maxlen=100), collections.deque(maxlen=100)]
@@ -218,29 +217,36 @@ try:
             action = None
             if env.player_turn == 0:
                 action = agent.getAction(state)
+                action_formated = {'player': env.player_turn, 'pos': action}
+                next_state, reward, done, info = env.step(action_formated)
+                agent.saveExperience(state, action, reward[env.player_turn], next_state, done)
+
+                state = next_state
+                total_reward[0] += reward[0]
+                total_reward[1] += reward[1]
+
+                train_loss = agent.trainModel()
+                total_loss += train_loss
+
             else:
                 action = randomValidAction(state)
+                action_formated = {'player': env.player_turn, 'pos': action}
+                next_state, reward, done, info = env.step(action_formated)
 
-            action_formated = {'player': env.player_turn, 'pos': action}
-            next_state, reward, done, info = env.step(action_formated)
-            agent.saveExperience(state, action, reward[env.player_turn], next_state, done)
+                state = next_state
+                total_reward[0] += reward[0]
+                total_reward[1] += reward[1]
+
             if RENDER:
                 env.render()
                 time.sleep(1)
-
-            state = next_state
-            total_reward[0] += reward[0]
-            total_reward[1] += reward[1]
-
-            train_loss = agent.trainModel()
-            total_loss += train_loss
 
             if done:
                 max_step = step
                 average_reward[0].append(total_reward[0])
                 average_reward[1].append(total_reward[1])
                 print("Episode: {:4d} | Total Reward P0: {:+9.3f} | Total Reward P1: {:+9.3f} Frames : {:3d} |"
-                      .format(episode, total_reward[0], total_reward[1], max_step))
+                      .format(episode, total_reward[0], -total_reward[1], max_step))
                 break
 
         if not RENDER:
@@ -251,6 +257,6 @@ except Exception as e:
     print(str(e))
     traceback.print_exc()
 finally:
-    print("Done")
+    print("Done. Time Taken : {:.2f}".format(time.time()-clock))
     agent.saveModel()
     env.close()
