@@ -8,13 +8,9 @@ import os
 import random
 import seaborn as sns
 import sys
-import tensorflow as tf
-from tensorflow import keras
 import time
+import tensorflow as tf
 import traceback
-
-
-tf.compat.v1.disable_eager_execution()
 
 
 class RLAgent:
@@ -49,17 +45,17 @@ class RLAgent:
     # Update the target network
     def updateTargetNetwork(self):
         print("Updating Target Network")
-        self.target_model = keras.models.clone_model(self.model)
+        self.target_model = tf.keras.models.clone_model(self.model)
         self.target_model.set_weights(self.model.get_weights())
         self.tau = 0
 
     # Define the layers of the neural network model
     def build_model(self):
-        model = keras.models.Sequential()
-        model.add(keras.layers.Dense(32, activation="relu", input_shape=self.state_size))
-        model.add(keras.layers.Dense(self.action_size))
+        model = tf.keras.models.Sequential()
+        model.add(tf.keras.layers.Dense(32, activation="relu", input_shape=self.state_size))
+        model.add(tf.keras.layers.Dense(self.action_size))
         model.compile(
-            optimizer=keras.optimizers.Adam(lr=self.learning_rate),
+            optimizer=tf.keras.optimizers.Adam(lr=self.learning_rate),
             loss='mse')
         model.summary()
         return model
@@ -76,7 +72,7 @@ class RLAgent:
         if os.path.isfile(weights_file):
             print("Loaded model from disk")
             self.epsilon = self.epsilon_min
-            return keras.models.load_model(weights_file)
+            return tf.keras.models.load_model(weights_file)
         else:
             print("Could not find file. Initializing the model")
             return self.build_model()
@@ -101,6 +97,8 @@ class RLAgent:
     # Train the model parameters
     def trainModel(self):
 
+        global PARENT_DIR, RUN_ID
+
         self.tau += 1
         if self.tau > self.max_tau:
             self.updateTargetNetwork()
@@ -122,11 +120,16 @@ class RLAgent:
             batch_train_x.append(state[0])
             batch_train_y.append(target_values[0])
 
+        log_dir = os.path.join(PARENT_DIR, 'data', 'tensorboard', RUN_ID)
+        tboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir,
+                                                         histogram_freq=1,
+                                                         profile_batch=1)
+
         history = self.model.fit(
             np.array(batch_train_x),
             np.array(batch_train_y),
             batch_size=len(batch_train_x),
-            epochs=1,
+            epochs=5,
             verbose=False)
         agent.epsilon = max(agent.epsilon_min, agent.epsilon * agent.epsilon_decay)
 
@@ -137,6 +140,7 @@ class RLAgent:
 def init(PARENT_DIR, GAME, SAVED_MODEL=None):
 
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    tf.compat.v1.disable_eager_execution()
 
     # Create the necessary folders
     recordings_folder = os.path.join(PARENT_DIR, 'data', 'recordings')
@@ -155,7 +159,7 @@ def init(PARENT_DIR, GAME, SAVED_MODEL=None):
     env = gym.make(GAME)
     # env = gym.wrappers.Monitor(env, os.path.join(PARENT_DIR, 'data/recordings/', RUN_ID), force=True)
     agent = RLAgent(env, maximizer=True, load_weights=SAVED_MODEL)
-    summary_writer = tf.summary.create_file_writer(os.path.join(PARENT_DIR, 'data', 'tensorboard', RUN_ID))
+    summary_writer = tf.compat.v1.summary.FileWriter(os.path.join(tensorboard_folder, RUN_ID))
 
     return (env, agent, summary_writer)
 
@@ -163,16 +167,15 @@ def init(PARENT_DIR, GAME, SAVED_MODEL=None):
 # Plot the metrics to Tensorboard for easier visualization
 def plotMetrics(summary_writer, episode, epsilon, train_loss, max_step, total_reward, average_reward):
 
-    with summary_writer.as_default():
-        tf.summary.scalar('Epsilon', epsilon, step=episode)
-        tf.summary.scalar('Loss', train_loss, step=episode)
-        tf.summary.scalar('Steps', max_step, step=episode)
-        tf.summary.scalar('Reward P0', total_reward[0], step=episode)
-        tf.summary.scalar('Reward P1', -total_reward[1], step=episode)
-        tf.summary.scalar('Reward Average (100) P0', np.mean(average_reward[0]), step=episode)
-        tf.summary.scalar('Reward Average (100) P1', -np.mean(average_reward[1]), step=episode)
-
-        summary_writer.flush()
+    summary = tf.compat.v1.Summary()
+    summary.value.add(tag='Epsilon', simple_value=epsilon)
+    summary.value.add(tag='Loss', simple_value=train_loss)
+    summary.value.add(tag='Steps', simple_value=max_step)
+    summary.value.add(tag='Reward P0', simple_value=total_reward[0])
+    summary.value.add(tag='Reward P1', simple_value=-total_reward[1])
+    summary.value.add(tag='Reward Average (100) P0', simple_value=np.mean(average_reward[0]))
+    summary.value.add(tag='Reward Average (100) P1', simple_value=-np.mean(average_reward[1]))
+    summary_writer.add_summary(summary, episode)
 
 
 def randomValidAction(state):
@@ -190,7 +193,7 @@ def randomValidAction(state):
 # Global Variables and Constants
 
 GAME = 'tictactoe-v0'
-MAX_EPISODES = 20
+MAX_EPISODES = 1000
 MAX_STEPS = 100
 RENDER = False
 SAVED_MODEL = None
