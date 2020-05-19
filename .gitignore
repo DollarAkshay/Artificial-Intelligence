@@ -9,7 +9,7 @@ ehthumbs.db
 
 # Ignoring general data files for extra good measure
 data/
-"Custom Environments/"
+Custom Environments/*
 
 
 
