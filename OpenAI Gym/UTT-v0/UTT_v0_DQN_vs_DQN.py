@@ -2,6 +2,7 @@ import collections
 import datetime
 import glob
 import gym
+import gym_utt
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -16,34 +17,21 @@ import traceback
 class RLAgent:
 
     def __init__(self, env, maximizer=True, load_weights=None):
-
         self.epsilon = 1.0
-        self.epsilon_decay = 0.996
-        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.99995
+        self.epsilon_min = 0.001
         self.gamma = 0.99
         self.learning_rate = 0.001
         self.learning_rate_decay = 0.01
-        self.max_tau = 500
+        self.max_tau = 1000
         self.tau = 0
 
         self.batch_size = 64
 
-        self.replay_buffer = collections.deque(maxlen=1000000)
-
-        if isinstance(env.observation_space, gym.spaces.Box):
-            self.state_size = env.observation_space.shape
-        elif isinstance(env.observation_space, gym.spaces.Discrete):
-            self.state_size = env.observation_space.n
-        else:
-            raise Exception('Dont not know how to handle observation space of type ', type(env.observation_space))
-
-        if isinstance(env.action_space, gym.spaces.Box):
-            self.action_size = env.action_space.shape
-        elif isinstance(env.action_space, gym.spaces.Discrete):
-            self.action_size = env.action_space.n
-        else:
-            raise Exception('Dont not know how to handle action space of type ', type(env.action_space))
-
+        self.replay_buffer = collections.deque(maxlen=500000)
+        self.state_size = [env.observation_space.n]
+        self.action_size = env.action_space.n
+        self.maximizer = maximizer
         if load_weights is not None:
             self.model = self.loadModel(load_weights)
         else:
@@ -65,11 +53,10 @@ class RLAgent:
     # Define the layers of the neural network model
     def build_model(self):
         model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Dense(150, activation="relu", input_shape=self.state_size))
-        # model.add(tf.keras.layers.BatchNormalization())
-        model.add(tf.keras.layers.Dense(120, activation="relu"))
-        # model.add(tf.keras.layers.BatchNormalization())
-        model.add(tf.keras.layers.Dense(self.action_size, activation='linear'))
+        model.add(tf.keras.layers.Dense(690, activation="relu", input_shape=self.state_size))
+        model.add(tf.keras.layers.Dense(450, activation="relu"))
+        model.add(tf.keras.layers.Dense(250, activation="relu"))
+        model.add(tf.keras.layers.Dense(self.action_size))
         model.compile(
             optimizer=tf.keras.optimizers.Adam(lr=self.learning_rate),
             loss='mse')
@@ -94,18 +81,22 @@ class RLAgent:
             return self.build_model()
 
     # Get best action from policy
-    def getAction(self, state):
+    def getAction(self, state, valid_actions):
         state = np.reshape(state, (1, self.state_size[0]))
         if np.random.rand() <= self.epsilon:
             # Exploration
-            return np.random.randint(self.action_size)
+            return random.choice(valid_actions)
         else:
             # Exploitation
-            output = self.model.predict(state)
-            return np.argmax(output)
+            output_raw = self.model.predict(state)
+            output = output_raw[0][valid_actions]
+            val_index = np.argmax(output)
+            return np.argmax(output_raw)
 
     # Save an experience for training during a later time
     def saveExperience(self, state, action, reward, next_state, done):
+        state = np.reshape(state, (1, self.state_size[0]))
+        next_state = np.reshape(next_state, (1, self.state_size[0]))
         self.replay_buffer.append((state, action, reward, next_state, done))
 
     # Train the model parameters
@@ -113,41 +104,44 @@ class RLAgent:
 
         global PARENT_DIR, RUN_ID
 
-        if len(self.replay_buffer) < self.batch_size:
-            return 0
-
         self.tau += 1
         if self.tau > self.max_tau:
             self.updateTargetNetwork()
 
-        minibatch = random.sample(self.replay_buffer, self.batch_size)
+        sample_size = min(self.batch_size, len(self.replay_buffer))
+        minibatch = random.sample(self.replay_buffer, sample_size)
         batch_train_x = []
         batch_train_y = []
 
-        states = np.array([b[0] for b in minibatch])
-        actions = np.array([b[1] for b in minibatch])
-        rewards = np.array([b[2] for b in minibatch])
-        next_states = np.array([b[3] for b in minibatch])
-        dones = np.array([b[4] for b in minibatch])
+        state_list = np.array([b[0][0] for b in minibatch])
+        next_state_list = np.array([b[3][0] for b in minibatch])
 
-        # targets = rewards + self.gamma*(np.amax(self.model.predict_on_batch(next_states), axis=1))*(1-dones)
-        # targets_full = self.model.predict_on_batch(states)
-        # ind = np.array([i for i in range(self.batch_size)])
-        # targets_full[[ind], [actions]] = targets
+        next_state_value_list = np.amax(self.target_model.predict(next_state_list), axis=1)
+        target_value_list = self.model.predict(state_list)
 
-        next_state_values = np.amax(self.target_model.predict_on_batch(next_states), axis=1)
-        target_values = self.model.predict_on_batch(states)
+        for i, (state, action, reward, next_state, done) in enumerate(minibatch):
+            next_state_value = 0
+            if not done:
+                next_state_value = next_state_value_list[i]
 
-        for i in range(len(minibatch)):
-            true_action_value = rewards[i] + self.gamma * next_state_values[i] * (1-dones[i])
-            target_values[i][actions[i]] = true_action_value
+            action_value = reward + self.gamma * next_state_value
+            target_values = target_value_list[i]
+            target_values[action] = action_value
+
+            batch_train_x.append(state[0])
+            batch_train_y.append(target_values)
+
+        # log_dir = os.path.join(PARENT_DIR, 'data', 'tensorboard', RUN_ID)
+        # tboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir,
+        #                                                  histogram_freq=1,
+        #                                                  profile_batch=1)
 
         history = self.model.fit(
-            states,
-            target_values,
-            epochs=1,
+            np.array(batch_train_x),
+            np.array(batch_train_y),
+            batch_size=len(batch_train_x),
+            epochs=5,
             verbose=False)
-
         agent.epsilon = max(agent.epsilon_min, agent.epsilon * agent.epsilon_decay)
 
         return history.history['loss'][0]
@@ -160,10 +154,6 @@ def init(PARENT_DIR, GAME, SAVED_MODEL=None):
     tf.compat.v1.disable_eager_execution()
 
     # Create the necessary folders
-    recordings_folder = os.path.join(PARENT_DIR, 'data', 'recordings')
-    if not os.path.exists(recordings_folder):
-        os.makedirs(recordings_folder)
-
     tensorboard_folder = os.path.join(PARENT_DIR, 'data', 'tensorboard')
     if not os.path.exists(tensorboard_folder):
         os.makedirs(tensorboard_folder)
@@ -175,7 +165,6 @@ def init(PARENT_DIR, GAME, SAVED_MODEL=None):
     # Initialize environment, agent and logger
     env = gym.make(GAME)
     # env = gym.wrappers.Monitor(env, os.path.join(PARENT_DIR, 'data/recordings/', RUN_ID), force=True)
-
     agent = RLAgent(env, maximizer=True, load_weights=SAVED_MODEL)
     summary_writer = tf.compat.v1.summary.FileWriter(os.path.join(tensorboard_folder, RUN_ID))
 
@@ -189,22 +178,28 @@ def plotMetrics(summary_writer, episode, epsilon, train_loss, max_step, total_re
     summary.value.add(tag='Epsilon', simple_value=epsilon)
     summary.value.add(tag='Loss', simple_value=train_loss)
     summary.value.add(tag='Steps', simple_value=max_step)
-    summary.value.add(tag='Reward', simple_value=total_reward)
-    summary.value.add(tag='Reward Average (100)', simple_value=np.mean(average_reward))
+    summary.value.add(tag='Reward P0', simple_value=total_reward[0])
+    summary.value.add(tag='Reward P1', simple_value=total_reward[1])
+    summary.value.add(tag='Reward Average (100) P0', simple_value=np.mean(average_reward[0]))
+    summary.value.add(tag='Reward Average (100) P1', simple_value=np.mean(average_reward[1]))
     summary_writer.add_summary(summary, episode)
+
+
+def randomValidAction(valid_moves):
+    return random.choice(valid_moves)
+
 
 # ~~~ MAIN CODE ~~~
 
 # Global Variables and Constants
 
-
-GAME = 'LunarLander-v2'
-MAX_EPISODES = 1000
-MAX_STEPS = 3000
+GAME = 'UTT-v0'
+MAX_EPISODES = 100000
+MAX_STEPS = 100
 RENDER = False
 
 
-RUN_ID = 'Double_DQN_tau_500'  # datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
+RUN_ID = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
 SAVED_MODEL = None
 # SAVED_MODEL = max(glob.glob(os.path.join(PARENT_DIR, 'data', 'saved_models')+"/*"), key=os.path.getctime)     # Returns Latest File
@@ -213,34 +208,56 @@ env, agent, summary_writer = init(PARENT_DIR, GAME, SAVED_MODEL)
 clock = time.time()
 try:
     # Start the Simulation
-    average_reward = collections.deque(maxlen=100)
+    average_reward = [collections.deque(maxlen=100), collections.deque(maxlen=100)]
     for episode in range(MAX_EPISODES):
         total_loss = 0
         max_step = 0
-        total_reward = 0
+        total_reward = [0, 0]
 
         state = env.reset()
         if RENDER:
             env.render()
         for step in range(MAX_STEPS):
-            action = agent.getAction(state)
-            next_state, reward, done, info = env.step(action)
-            agent.saveExperience(state, action, reward, next_state, done)
 
-            state = next_state
-            total_reward += reward
+            action = None
+            if env.player_turn == 0:
+                valid_moves = env.getValidMoves()
+                state = env._get_obs(0)
+                action = agent.getAction(state, valid_moves)
+                next_state, reward, done, info = env.step(action)
+                agent.saveExperience(state, action, reward[0], next_state, done)
 
-            train_loss = agent.trainModel()
-            total_loss += train_loss
+                # print("Player 1 : ")
+                # print("State : ", state)
+                # print("Reward : ", reward)
+
+                state = next_state
+                total_reward[0] += reward[0]
+                total_reward[1] += reward[1]
+
+                train_loss = agent.trainModel()
+                total_loss += train_loss
+
+            else:
+                state = env._get_obs(1)
+                valid_moves = env.getValidMoves()
+                action = randomValidAction(valid_moves)
+                next_state, reward, done, info = env.step(action)
+
+                state = next_state
+                total_reward[0] += reward[0]
+                total_reward[1] += reward[1]
 
             if RENDER:
                 env.render()
+                time.sleep(0.4)
 
             if done:
                 max_step = step
-                average_reward.append(total_reward)
-                print("Episode: {:4d} | Total Reward: {:+9.3f} | Frames : {:3d} |"
-                      .format(episode, total_reward, max_step))
+                average_reward[0].append(total_reward[0])
+                average_reward[1].append(total_reward[1])
+                print("Episode: {:4d} | Total Reward P0: {:+9.3f} | Total Reward P1: {:+9.3f} Frames : {:3d} |"
+                      .format(episode, total_reward[0], total_reward[1], max_step))
                 break
 
         if not RENDER:

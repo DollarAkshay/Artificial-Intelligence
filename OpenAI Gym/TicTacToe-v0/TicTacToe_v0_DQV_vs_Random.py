@@ -1,5 +1,6 @@
 import collections
 import datetime
+import glob
 import gym
 import gym_tictactoe
 import matplotlib.pyplot as plt
@@ -20,14 +21,14 @@ class RLAgent:
         self.epsilon_decay = 0.9975
         self.epsilon_min = 0.001
         self.gamma = 0.99
-        self.learning_rate = 0.0001
+        self.learning_rate = 0.00002
         self.learning_rate_decay = 0.01
         self.max_tau = 1000
         self.tau = 0
 
-        self.batch_size = 64
+        self.batch_size = 128
 
-        self.replay_buffer = collections.deque(maxlen=10000)
+        self.replay_buffer = collections.deque(maxlen=100000)
         self.state_size = [env.observation_space.n]
         self.action_size = env.action_space['pos'].n
         self.maximizer = maximizer
@@ -52,7 +53,9 @@ class RLAgent:
     # Define the layers of the neural network model
     def build_model(self):
         model = tf.keras.models.Sequential()
-        model.add(tf.keras.layers.Dense(32, activation="relu", input_shape=self.state_size))
+        model.add(tf.keras.layers.Dense(36, activation="relu", input_shape=self.state_size))
+        model.add(tf.keras.layers.Dense(42, activation="relu", input_shape=self.state_size))
+        model.add(tf.keras.layers.Dense(36, activation="relu", input_shape=self.state_size))
         model.add(tf.keras.layers.Dense(self.action_size))
         model.compile(
             optimizer=tf.keras.optimizers.Adam(lr=self.learning_rate),
@@ -108,22 +111,28 @@ class RLAgent:
         batch_train_x = []
         batch_train_y = []
 
-        for state, action, reward, next_state, done in minibatch:
+        state_list = np.array([b[0][0] for b in minibatch])
+        next_state_list = np.array([b[3][0] for b in minibatch])
+
+        next_state_value_list = np.amax(self.target_model.predict(next_state_list), axis=1)
+        target_value_list = self.model.predict(state_list)
+
+        for i, (state, action, reward, next_state, done) in enumerate(minibatch):
             next_state_value = 0
             if not done:
-                next_state_value = np.max(self.target_model.predict(next_state))
+                next_state_value = next_state_value_list[i]
 
             action_value = reward + self.gamma * next_state_value
-            target_values = self.model.predict(state)
-            target_values[0][action] = action_value
+            target_values = target_value_list[i]
+            target_values[action] = action_value
 
             batch_train_x.append(state[0])
-            batch_train_y.append(target_values[0])
+            batch_train_y.append(target_values)
 
-        log_dir = os.path.join(PARENT_DIR, 'data', 'tensorboard', RUN_ID)
-        tboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir,
-                                                         histogram_freq=1,
-                                                         profile_batch=1)
+        # log_dir = os.path.join(PARENT_DIR, 'data', 'tensorboard', RUN_ID)
+        # tboard_callback = tf.keras.callbacks.TensorBoard(log_dir=log_dir,
+        #                                                  histogram_freq=1,
+        #                                                  profile_batch=1)
 
         history = self.model.fit(
             np.array(batch_train_x),
@@ -193,14 +202,15 @@ def randomValidAction(state):
 # Global Variables and Constants
 
 GAME = 'tictactoe-v0'
-MAX_EPISODES = 1000
+MAX_EPISODES = 15000
 MAX_STEPS = 100
 RENDER = False
-SAVED_MODEL = None
-# SAVED_MODEL = 'model_2020-05-14 23-28-16.h5'
+
 
 RUN_ID = datetime.datetime.now().strftime("%Y-%m-%d %H-%M-%S")
 PARENT_DIR = os.path.dirname(os.path.abspath(__file__))
+SAVED_MODEL = None
+# SAVED_MODEL = max(glob.glob(os.path.join(PARENT_DIR, 'data', 'saved_models')+"/*"), key=os.path.getctime)     # Returns Latest File
 
 env, agent, summary_writer = init(PARENT_DIR, GAME, SAVED_MODEL)
 clock = time.time()
@@ -222,7 +232,7 @@ try:
                 action = agent.getAction(state)
                 action_formated = {'player': env.player_turn, 'pos': action}
                 next_state, reward, done, info = env.step(action_formated)
-                agent.saveExperience(state, action, reward[env.player_turn], next_state, done)
+                agent.saveExperience(state, action, reward[0], next_state, done)
 
                 state = next_state
                 total_reward[0] += reward[0]
@@ -243,6 +253,8 @@ try:
             if RENDER:
                 env.render()
                 time.sleep(1)
+
+            print(done)
 
             if done:
                 max_step = step
